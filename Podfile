@@ -6,6 +6,8 @@
 target 'ocr' do
 pod 'GPUImage', '~> 0.1'
 pod 'OpenCV'
+pod 'AFNetworking'
+pod 'MBProgressHUD', '~> 0.9'
 end
 
 target 'ocrTests' do

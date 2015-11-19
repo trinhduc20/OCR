@@ -9,21 +9,24 @@
 import UIKit
 import GPUImage
 import CoreGraphics
+import Alamofire
+import AFNetworking
+import MBProgressHUD
 
 class ViewController: UIViewController, UINavigationControllerDelegate {
 
     @IBOutlet weak var btScan: UIBarButtonItem!
     @IBOutlet weak var imageAvatar: UIImageView!
     
-
-    @IBOutlet weak var processImage: UIImageView!
-    @IBOutlet weak var lbProcessing: UILabel!
-
+    @IBOutlet weak var recognizedView: UITextView!
+    @IBOutlet weak var recognizedView2: UITextView!
+    
+    @IBOutlet weak var tvServer: UITextView!
+    @IBOutlet weak var processImageView: UIImageView!
     @IBOutlet weak var tv: UITextView!
     override func viewDidLoad() {
         super.viewDidLoad()
         // Do any additional setup after loading the view, typically from a nib.
-        self.lbProcessing.text = ""
     }
 
     override func didReceiveMemoryWarning() {
@@ -44,8 +47,8 @@ class ViewController: UIViewController, UINavigationControllerDelegate {
         overlayView.backgroundColor = UIColor.clearColor()
         imagePicker.cameraOverlayView = overlayView
         
-        self.lbProcessing.text = ""
         self.tv.text = ""
+        self.tvServer.text = ""
         
         self.presentViewController(imagePicker, animated: true, completion: nil)
     
@@ -75,13 +78,39 @@ class ViewController: UIViewController, UINavigationControllerDelegate {
     }
 //    
     func processingImage(sourceImage: UIImage) -> UIImage{
-        let stillImageFilter = GPUImageAdaptiveThresholdFilter()
-        stillImageFilter.blurRadiusInPixels = 13
-        let filteredImage = stillImageFilter.imageByFilteringImage(sourceImage)
+        
+        
+        //1. Gray image
+        let grayImage = GPUImageGrayscaleFilter()
+        let outputGrayImage = grayImage.imageByFilteringImage(sourceImage) as UIImage
+        
+        self.processImageView.image = outputGrayImage
+        
+        //2. Threshold filter
+        let _stillImageFilter = GPUImageAdaptiveThresholdFilter()
+        _stillImageFilter.blurRadiusInPixels = 13
+        let filteredImage = _stillImageFilter.imageByFilteringImage(outputGrayImage) as UIImage
+        
+        //3. Blur
+//        let stillImageSource = GPUImagePicture(image: filteredImage)
+//        let blurFilter = GPUImageExposureFilter()
+//        blurFilter.exposure = 5
+//        
+//        stillImageSource.addTarget(blurFilter)
+//        blurFilter.useNextFrameForImageCapture()
+//        stillImageSource.processImage()
+//       let outputImage =  blurFilter.imageFromCurrentFramebufferWithOrientation(UIImageOrientation.Up)
+        
+//        let unSharpen = GPUImageUnsharpMaskFilter()
+//        stillImageSource.addTarget(unSharpen)
+//        unSharpen.useNextFrameForImageCapture()
+//        stillImageSource.processImage()
+//        
+//        let outputUnSharpen = unSharpen.imageByFilteringImage(filteredImage) as UIImage
         
         return filteredImage
     }
-    
+
     func performImageRecognition(image: UIImage) {
         // 1
         let tesseract = G8Tesseract()
@@ -100,16 +129,12 @@ class ViewController: UIViewController, UINavigationControllerDelegate {
         tesseract.maximumRecognitionTime = 60.0
         
         // 6
-        tesseract.image = image.g8_blackAndWhite()
+        tesseract.image = image.g8_grayScale()
         
         
         tesseract.recognize()
-        print(tesseract.characterBoxes)
-        print(tesseract.characterChoices)
-        print(tesseract.characterChoices)
-        
         print(tesseract.recognizedText)
-        self.lbProcessing.text = ""
+        MBProgressHUD.hideHUDForView(self.recognizedView, animated: true)
         self.tv.text = tesseract.recognizedText;
         
         self.btScan.enabled = true
@@ -131,22 +156,61 @@ extension ViewController: UIImagePickerControllerDelegate {
         
         
         self.imageAvatar.image = rotatedPhoto
-        self.processImage.image = nil
+        self.processImageView.image = nil
         
         self.btScan.enabled = false
         
-        self.lbProcessing.text = "Processing ..."
+        
+        let hud : MBProgressHUD = MBProgressHUD.showHUDAddedTo(recognizedView, animated: true)
+        let hud1 : MBProgressHUD = MBProgressHUD.showHUDAddedTo(recognizedView2, animated: true)
+        hud.labelText = "Processing ..."
+        hud1.labelText = "Processing ..."
+        
         dismissViewControllerAnimated(true, completion: {
-            let processImage = self.processingImage(scaledImage)
-//            let openCVImage = OpenCVWrapper.processImageWithOpenCV(scaledImage)
             
-            self.processImage.image = processImage
+            let processImage = self.processingImage(scaledImage)
+            
+            self.processImageView.image = processImage
             
             self.performImageRecognition(processImage)
             
         })
+        
+        self.tvServer.text = ""
+        postRequest(scaledImage)
     }
+    
+    func postRequest(image: UIImage){
+        let manager = AFHTTPRequestOperationManager()
+        
+        let url = "https://ocr.a9t9.com/api/Parse/Image"
+        
+        let params = [
+            "apikey":"helloworld",
+            "language" : "eng",
 
+        ]
+        let imageData = UIImageJPEGRepresentation(image, 1)
+        manager.POST(url, parameters: params, constructingBodyWithBlock: { (data) in
+            data.appendPartWithFileData(imageData!, name: "file" as String, fileName: "file.jpg" as String, mimeType:"image/jpeg"  as String)
+            }, success: { (operation, responseObject) in
+                print(responseObject)
+                
+                if(responseObject["ParsedResults"] != nil){
+                    let arrs = responseObject["ParsedResults"] as! NSArray
+                    let value = arrs[0]
+                    print(value["ParsedText"])
+                    
+                    self.tvServer.text = value["ParsedText"] as! String
+                    MBProgressHUD.hideHUDForView(self.recognizedView2, animated: true)
+                    
+                }
+            }, failure: { (operation, error) in
+                MBProgressHUD.hideHUDForView(self.recognizedView2, animated: true)
+                print(error)
+        })
+    }
+    
     func cropImage(screenshot: UIImage) -> UIImage {
         print(screenshot.size)
         let crop = CGRectMake(screenshot.size.width/2 - 700/2, screenshot.size.height/2 - 380/2, 700 , 380)

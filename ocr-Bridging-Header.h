@@ -3,4 +3,6 @@
 //
 
 #import <TesseractOCR/TesseractOCR.h>
-//#import "OpenCVWrapper.h"
+#import "OpenCVWrapper.h"
+#import <AFNetworking/AFNetworking.h>
+#import <MBProgressHUD/MBProgressHUD.h>
